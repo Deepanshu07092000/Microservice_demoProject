@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Spring Boot Microservices: Eureka + API Gateway + User & Order Services
 
 | App | Port | Eureka name | Database |
@@ -181,4 +181,3 @@ docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhos
 =======
 # Microservice_demoProject
 This is the demo project that is explaining about the working of microservice 
->>>>>>> e1b7d857cfe7bcb10e0f11f9c8ca8c1136b9b5e7
