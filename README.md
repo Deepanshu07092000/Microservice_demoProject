@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Spring Boot Microservices: Eureka + API Gateway + User & Order Services
 
 | App | Port | Eureka name | Database |
@@ -177,3 +178,7 @@ docker exec -it kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhos
 - **`docker compose ps` shows kafka `unhealthy`:** check `docker compose logs kafka`. A stale `kafka-data` volume can conflict; `docker compose down -v` resets everything (this also deletes MySQL data).
 - **A service shows `Exited` with out-of-memory:** raise Docker's memory (Docker Desktop / `.wslconfig`) or stop other containers.
 - **No notification appears:** check `docker compose logs notification-service` for `Received from Kafka`. If missing, check that order-service logged `Published ORDER_CREATED`.
+=======
+# Microservice_demoProject
+This is the demo project that is explaining about the working of microservice 
+>>>>>>> e1b7d857cfe7bcb10e0f11f9c8ca8c1136b9b5e7
