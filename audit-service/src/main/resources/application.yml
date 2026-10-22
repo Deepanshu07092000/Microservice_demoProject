@@ -1,0 +1,47 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: AUDIT-SERVICE
+  datasource:
+    # Own isolated database: audit_service_db (created automatically if missing)
+    url: "jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:audit_service_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:12589622}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    # Inside Docker this is kafka:29092 (set by docker-compose); from IntelliJ it is localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: audit-group             # different from notification-group, so Audit gets its OWN copy of every event
+      auto-offset-reset: earliest       # a brand-new group starts from the oldest message instead of only new ones
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      # ErrorHandlingDeserializer wraps the JSON one: a broken message is reported as an error instead of crashing the listener forever
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.value.default.type: com.example.auditservice.event.OrderEvent   # always read the JSON into OUR OrderEvent class
+        spring.json.use.type.headers: false
+        spring.json.trusted.packages: "*"
+
+app:
+  kafka:
+    topic:
+      order-events: order-events
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [AUDIT-SERVICE:8084] %-5level %logger{30} - %msg%n"
+  level:
+    com.example.auditservice: INFO

@@ -1,0 +1,28 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: USER-SERVICE
+  datasource:
+    # Own isolated database: user_service_db (created automatically if missing)
+    url: "jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:user_service_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:12589622}
+  jpa:
+    hibernate:
+      ddl-auto: update      # dev convenience; use Flyway/Liquibase in production
+    open-in-view: false
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [USER-SERVICE:8081] %-5level %logger{30} - %msg%n"
+  level:
+    com.example.userservice: INFO

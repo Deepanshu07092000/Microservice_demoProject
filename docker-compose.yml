@@ -1,0 +1,163 @@
+services:
+
+  # ---------- Database (one MySQL server, four separate databases) ----------
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: 12589622
+    ports:
+      - "3307:3306"        # host 3307 -> container 3306
+    volumes:
+      - mysql-data:/var/lib/mysql                      # keeps your data
+      - ./mysql-init/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # creates the databases on first run
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p12589622"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- Kafka (single broker in KRaft mode: no ZooKeeper needed) ----------
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    ports:
+      - "9092:9092"        # for apps running on your PC (IntelliJ) -> localhost:9092
+    environment:
+      CLUSTER_ID: "5L6g3nShT-eMCtK--X86sw"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # Three listeners: INTERNAL for containers (kafka:29092), EXTERNAL for your PC (localhost:9092), CONTROLLER for Kafka itself
+      KAFKA_LISTENERS: INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Only one broker, so every internal topic can have just one replica
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+    volumes:
+      - kafka-data:/var/lib/kafka/data                 # keeps topics and offsets across restarts
+    healthcheck:           # other services wait until Kafka really answers
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  # ---------- Service registry ----------
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+
+  # ---------- User Service (user_service_db) ----------
+  user-service:
+    build: ./user-service
+    container_name: user-service
+    ports:
+      - "8081:8081"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: user_service_db        # <-- its own database
+      DB_USERNAME: root
+      DB_PASSWORD: 12589622
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+
+  # ---------- Order Service (order_service_db) - PRODUCES order events to Kafka ----------
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "8082:8082"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: order_service_db       # <-- its own database
+      DB_USERNAME: root
+      DB_PASSWORD: 12589622
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  # ---------- Notification Service (notification_service_db) - CONSUMES order events ----------
+  notification-service:
+    build: ./notification-service
+    container_name: notification-service
+    ports:
+      - "8083:8083"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: notification_service_db
+      DB_USERNAME: root
+      DB_PASSWORD: 12589622
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAVA_TOOL_OPTIONS: "-Xmx384m"   # keeps memory use low when many containers run together (remove if you have lots of RAM)
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  # ---------- Audit Service (audit_service_db) - CONSUMES order events ----------
+  audit-service:
+    build: ./audit-service
+    container_name: audit-service
+    ports:
+      - "8084:8084"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: audit_service_db
+      DB_USERNAME: root
+      DB_PASSWORD: 12589622
+      EUREKA_URL: http://eureka-server:8761/eureka/
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAVA_TOOL_OPTIONS: "-Xmx384m"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  # ---------- API Gateway ----------
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      EUREKA_URL: http://eureka-server:8761/eureka/
+    depends_on:
+      - eureka-server
+      - user-service
+      - order-service
+      - notification-service
+      - audit-service
+
+volumes:
+  mysql-data:
+  kafka-data:

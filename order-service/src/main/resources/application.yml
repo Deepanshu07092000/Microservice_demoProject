@@ -1,0 +1,96 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ORDER-SERVICE
+  datasource:
+    # Own isolated database: order_service_db (created automatically if missing)
+    url: "jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:order_service_db}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:12589622}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  kafka:
+    # Inside Docker this is kafka:29092 (set by docker-compose); from IntelliJ it is localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                       # wait until the broker has safely stored the message
+      properties:
+        spring.json.add.type.headers: false   # don't put Java class names in the message (consumers have their own classes)
+        # If Kafka is down, give up after a few seconds instead of hanging the order request for a minute
+        max.block.ms: 5000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
+
+app:
+  kafka:
+    topic:
+      order-events: order-events      # topic that Notification Service and Audit Service listen to
+
+resilience4j:
+  retry:
+    instances:
+      userService:
+        max-attempts: 3
+        wait-duration: 1s
+        retry-exceptions:
+          - com.example.orderservice.exception.ServiceUnavailableException
+        ignore-exceptions:
+          - com.example.orderservice.exception.UserNotFoundException
+  ratelimiter:
+    instances:
+      createOrder: # name we will use later in @RateLimiter(name = "createOrder")
+        limit-for-period: 5           # at most 5 calls allowed ...
+        limit-refresh-period: 30s     # ... in every 30-second window
+        timeout-duration: 0           # 0 = do not wait for a free slot, reject immediately
+  circuitbreaker:
+    instances:
+      userService:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 5
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s # was 10s, temporary for testing
+        automatic-transition-from-open-to-half-open-enabled: true
+        permitted-number-of-calls-in-half-open-state: 2
+        record-exceptions:
+          - com.example.orderservice.exception.ServiceUnavailableException
+        ignore-exceptions:
+          - com.example.orderservice.exception.UserNotFoundException
+        register-health-indicator: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,circuitbreakers,circuitbreakerevents,ratelimiters,ratelimiterevents
+  health:
+    circuitbreakers:
+      enabled: true
+
+#  cloud:
+#    openfeign:
+#      client:
+#        config:
+#          default:
+#            connectTimeout: 2000   # ms to establish the connection
+#            readTimeout: 3000      # ms to wait for the response
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [ORDER-SERVICE:8082] %-5level %logger{30} - %msg%n"
+  level:
+    com.example.orderservice: INFO
+
